@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import re
 import csv
+from datetime import datetime
 
 urls = [
     "https://cendikia.kemenag.go.id/publik/kategori/1/36/81?page=1",
@@ -13,18 +14,12 @@ urls = [
     "https://cendikia.kemenag.go.id/publik/kategori/1/36/57?page=1",
     "https://cendikia.kemenag.go.id/publik/kategori/1/36/57?page=2",
     "https://cendikia.kemenag.go.id/publik/kategori/1/36/57?page=3",
-    
 ]
 
 output = []
-
 pdf_url_pattern = re.compile(r'pdfUrl\s*:\s*"([^"]+)"')
-
-headers = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-items_to_fetch = []  
+headers = { "User-Agent": "Mozilla/5.0" }
+items_to_fetch = []
 
 for url in urls:
     print(f"Scraping list: {url}")
@@ -55,19 +50,19 @@ for url in urls:
             if not a_tag:
                 continue
 
-            pdf_url = urljoin(url, a_tag["href"])
+            detail_url = urljoin(url, a_tag["href"])
 
             items_to_fetch.append({
                 "title": title,
                 "image_url": img_url,
-                "pdf_url": pdf_url
+                "detail_url": detail_url
             })
     except Exception as e:
         print(f"  ✗ Failed to scrape {url}: {e}")
 
 async def fetch_detail(session, item):
     try:
-        async with session.get(item["pdf_url"]) as res:
+        async with session.get(item["detail_url"]) as res:
             html = await res.text()
             soup = BeautifulSoup(html, "html.parser")
 
@@ -79,11 +74,15 @@ async def fetch_detail(session, item):
                         pdf_url = match.group(1)
                         break
 
-            item["pdf_url"] = pdf_url
-            print(f"  ✓ {item['title']} -> {item['pdf_url'] or 'N/A'}")
-            output.append(item)
+            output.append({
+                "title": item["title"],
+                "image_url": item["image_url"],
+                "pdf_url": pdf_url,
+                "timestamp": datetime.now().isoformat()
+            })
+            print(f"  ✓ {item['title']} -> {pdf_url or 'N/A'}")
     except Exception as e:
-        print(f"  ✗ Error fetching {item['pdf_url']}: {e}")
+        print(f"  ✗ Error fetching {item['detail_url']}: {e}")
 
 async def main():
     async with aiohttp.ClientSession(headers=headers) as session:
@@ -92,9 +91,11 @@ async def main():
 
 asyncio.run(main())
 
+output.sort(key=lambda x: x["title"])
+
 with open("output_kma.csv", "w", newline="", encoding="utf-8") as f:
-    writer = csv.DictWriter(f, fieldnames=["title", "image_url", "pdf_url"])
+    writer = csv.DictWriter(f, fieldnames=["title", "image_url", "pdf_url", "timestamp"])
     writer.writeheader()
     writer.writerows(output)
 
-print("\n✅ Done! Data with PDF links saved to output_kma.csv")
+print("\n✅ Done! Sorted data with PDF links and timestamp saved to output_kma.csv")
